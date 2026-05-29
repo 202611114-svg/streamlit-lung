@@ -2,100 +2,156 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import joblib
-import matplotlib.pyplot as plt
+import plotly.express as px
+import plotly.graph_objects as go
 import os
 
-# 1. 페이지 설정 및 한글 폰트
-st.set_page_config(page_title="폐암 위험군 분석", layout="wide")
-plt.rcParams['font.family'] = 'Malgun Gothic'
-plt.rcParams['axes.unicode_minus'] = False
+# 1. 페이지 설정
+st.set_page_config(page_title="Lung Cancer AI Diagnosis", layout="wide", initial_sidebar_state="expanded")
 
-# 2. 레드 테마 CSS
+# 2. 고해상도 디자인을 위한 커스텀 CSS
 st.markdown("""
     <style>
-    .main { background-color: #fffafa; }
-    h1 { color: #d32f2f; font-weight: 800; }
-    .stButton>button {
-        background-color: #d32f2f; color: white; border-radius: 5px;
-        width: 100%; height: 3em; font-weight: bold; border: none;
+    @import url('https://fonts.googleapis.com/css2?family=Pretendard:wght@400;700;900&display=swap');
+    
+    html, body, [class*="css"] { font-family: 'Pretendard', sans-serif; }
+    
+    /* 배경색 및 메인 타이틀 */
+    .main { background-color: #fcfcfc; }
+    .stTitle { color: #d32f2f; font-weight: 900; letter-spacing: -1px; }
+    
+    /* 진단 결과 카드 디자인 */
+    .diagnosis-card {
+        padding: 40px;
+        border-radius: 20px;
+        color: white;
+        box-shadow: 0 15px 35px rgba(0,0,0,0.1);
+        text-align: center;
+        margin-bottom: 25px;
     }
-    .stButton>button:hover { background-color: #b71c1c; }
-    .status-box { padding: 25px; border-radius: 15px; color: white; margin-bottom: 20px; }
+    .diagnosis-label { font-size: 1.5rem; font-weight: 400; opacity: 0.9; }
+    .diagnosis-name { font-size: 3.5rem; font-weight: 900; margin: 10px 0; }
+    
+    /* 사이드바 스타일링 */
+    [data-testid="stSidebar"] { background-color: #f8f9fa; border-right: 1px solid #eee; }
+    .stButton>button {
+        background: linear-gradient(135deg, #d32f2f 0%, #b71c1c 100%);
+        color: white; border: none; padding: 15px; border-radius: 12px;
+        font-weight: 700; font-size: 1.1rem; transition: 0.3s;
+    }
+    .stButton>button:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(211,47,47,0.4); }
     </style>
     """, unsafe_allow_html=True)
 
-# 3. 데이터 및 모델 로드
+# 3. 데이터 로드 함수
 @st.cache_resource
-def load_data():
+def load_resources():
     base_path = os.path.dirname(__file__)
     model = joblib.load(os.path.join(base_path, 'lung_model.pkl'))
     scaler = joblib.load(os.path.join(base_path, 'lung_scaler.pkl'))
     df = pd.read_csv(os.path.join(base_path, 'lung.csv'))
     
-    # cluster 컬럼 자동 생성
+    # 전체 데이터 클러스터링 미리 수행
     X = df[['나이', '담배여부', '알코올']]
     df['cluster'] = model.predict(scaler.transform(X))
     return model, scaler, df
 
-model, scaler, df = load_data()
+model, scaler, df = load_resources()
 
-# 4. 사이드바 입력
+# 4. 사이드바 구성
 with st.sidebar:
-    st.title("📌 환자 데이터")
-    age = st.number_input("나이", value=50)
-    smoking = st.slider("담배 수치", 0.0, 10.0, 2.0)
-    alcohol = st.slider("알코올 수치", 0.0, 10.0, 2.0)
-    run_btn = st.button("결과 분석")
+    st.markdown("<h2 style='color:#d32f2f;'>🏥 Patient Data</h2>", unsafe_allow_html=True)
+    st.write("환자의 정보를 세부적으로 입력해주세요.")
+    st.divider()
+    
+    age = st.number_input("나이 (Age)", min_value=1, max_value=120, value=50)
+    smoking = st.slider("담배 수치 (Smoking Exposure)", 0.0, 10.0, 2.0, step=0.1)
+    alcohol = st.slider("알코올 수치 (Alcohol Consumption)", 0.0, 10.0, 2.0, step=0.1)
+    
+    st.write("")
+    run_btn = st.button("실시간 분석 시작")
 
-# 5. 메인 화면
-st.title("🚨 폐암 위험군 정밀 분석")
-st.write("입력된 지표를 바탕으로 환자의 군집을 분류합니다.")
+# 5. 메인 레이아웃
+st.title("🚨 Lung Cancer Risk AI Analysis")
+st.write("인공지능 모델이 환자의 데이터를 기반으로 위험 군집을 분류합니다.")
 st.divider()
 
 if run_btn:
-    # 예측
+    # 데이터 예측
     new_data = pd.DataFrame([[age, smoking, alcohol]], columns=['나이', '담배여부', '알코올'])
-    pred = model.predict(scaler.transform(new_data))[0]
+    pred_idx = model.predict(scaler.transform(new_data))[0]
 
-    # [수정 완료] 군집 번호 매칭
-    # 0: 매우 건강군, 1: 건강군, 2: 중간 그룹, 3: 강한 폐암 위험군 설정에 기반하여
-    # 사용자 요청: "2번이 건강군이다"를 반영한 커스텀 매핑
+    # 군집 매핑 (사용자 요청: 2번이 건강군)
     mapping = {
-        0: {"label": "매우 건강군", "color": "#2E7D32", "desc": "가장 안전한 그룹입니다."},
-        1: {"label": "중간 위험군", "color": "#F57C00", "desc": "주의가 필요한 단계입니다."},
-        2: {"label": "건강군", "color": "#1976D2", "desc": "일반적인 건강 상태입니다."}, # 요청 반영
-        3: {"label": "강한 폐암 위험군", "color": "#D32F2F", "desc": "매우 위험합니다. 정밀 검사가 필요합니다."}
+        0: {"label": "매우 건강군", "color": "#2E7D32", "desc": "신체 지표가 매우 우수한 상태입니다."},
+        1: {"label": "중간 위험군", "color": "#EF6C00", "desc": "주의가 필요한 단계입니다. 예방 조치를 권장합니다."},
+        2: {"label": "일반 건강군", "color": "#1976D2", "desc": "정상 범위의 건강 상태를 유지하고 있습니다."},
+        3: {"label": "강한 폐암 위험군", "color": "#D32F2F", "desc": "위험 수치가 매우 높습니다. 즉각적인 전문의 상담이 필요합니다."}
     }
     
-    res = mapping[pred]
+    res = mapping[pred_idx]
 
-    c1, c2 = st.columns([1, 1.2])
+    # 상단 결과 카드
+    st.markdown(f"""
+        <div class="diagnosis-card" style="background-color: {res['color']};">
+            <div class="diagnosis-label">AI 분석 결과</div>
+            <div class="diagnosis-name">{res['label']}</div>
+            <div style="font-size: 1.2rem; opacity: 0.9;">현재 환자는 <b>{pred_idx}번 군집</b>에 배정되었습니다.</div>
+            <p style="margin-top:15px; font-weight:bold;">{res['desc']}</p>
+        </div>
+    """, unsafe_allow_html=True)
 
-    with c1:
-        st.subheader("分析 결과")
-        st.markdown(f"""
-            <div class="status-box" style="background-color: {res['color']};">
-                <h2 style="margin:0;">{res['label']}</h2>
-                <p style="font-size:1.2em;">현재 환자는 <b>군집 {pred}번</b>에 해당합니다.</p>
-                <hr style="opacity:0.5;">
-                <p>{res['desc']}</p>
-            </div>
-        """, unsafe_allow_html=True)
+    col1, col2 = st.columns([1, 1], gap="large")
 
-    with c2:
-        st.subheader("데이터 분포")
-        fig, ax = plt.subplots()
-        # 군집별 색상 (매핑 순서대로)
-        colors = {0:'#2E7D32', 1:'#F57C00', 2:'#1976D2', 3:'#D32F2F'}
+    with col1:
+        st.subheader("📍 군집 시각화 분석")
+        # Plotly를 이용한 예쁜 산점도
+        df['군집명'] = df['cluster'].map(lambda x: mapping[x]['label'])
         
-        for i in range(4):
-            tmp = df[df['cluster'] == i]
-            ax.scatter(tmp['나이'], tmp['담배여부'], c=colors[i], label=f"군집 {i}", alpha=0.4)
-            
-        ax.scatter(age, smoking, c='yellow', s=300, marker='*', edgecolor='black', label='내 위치')
-        ax.set_xlabel("나이")
-        ax.set_ylabel("담배 수치")
-        ax.legend()
-        st.pyplot(fig)
+        fig = px.scatter(
+            df, x='나이', y='담배여부', color='군집명',
+            color_discrete_map={v['label']: v['color'] for k, v in mapping.items()},
+            opacity=0.5, template='plotly_white',
+            labels={'나이': '환자 연령', '담배여부': '흡연 노출도'}
+        )
+        
+        # 환자 본인 위치 추가 (큰 노란색 별)
+        fig.add_trace(go.Scatter(
+            x=[age], y=[smoking],
+            mode='markers',
+            marker=dict(color='yellow', size=25, symbol='star', line=dict(width=2, color='black')),
+            name='분석 대상자'
+        ))
+        
+        fig.update_layout(legend_title_text='군집 분류', margin=dict(l=0, r=0, t=30, b=0))
+        st.plotly_chart(fig, use_container_width=True)
+
+    with col2:
+        st.subheader("📊 지표별 상세 분석")
+        # 게이지 차트 등을 이용한 시각화
+        st.write(f"현재 환자의 수치: 나이 {age}세 / 담배 {smoking} / 알코올 {alcohol}")
+        
+        # 각 지표별 막대 그래프
+        metrics = pd.DataFrame({
+            '지표': ['나이', '담배', '알코올'],
+            '수치': [age, smoking * 10, alcohol * 10] # 스케일링 보정
+        })
+        fig_bar = px.bar(metrics, x='지표', y='수치', color='지표', 
+                         color_discrete_sequence=['#bdbdbd', '#d32f2f', '#d32f2f'],
+                         template='plotly_white')
+        fig_bar.update_layout(showlegend=False)
+        st.plotly_chart(fig_bar, use_container_width=True)
+        
+        st.warning(f"**알림:** 분석 데이터상 {res['label']} 그룹의 평균 흡연 수치는 {df[df['cluster']==pred_idx]['담배여부'].mean():.2f}입니다.")
+
 else:
-    st.info("왼쪽 버튼을 눌러 분석을 시작하세요.")
+    # 분석 전 초기 화면
+    st.markdown("""
+        <div style="text-align: center; padding: 100px 0;">
+            <img src="https://cdn-icons-png.flaticon.com/512/2865/2865766.png" width="150">
+            <h2 style="color: #ccc;">왼쪽 사이드바에서 데이터를 입력하고 <br>분석 버튼을 눌러주세요.</h2>
+        </div>
+    """, unsafe_allow_html=True)
+
+st.divider()
+st.caption("본 AI 모델은 연구 목적으로 제작되었습니다. 정확한 진단은 반드시 의료기관을 방문하시기 바랍니다.")
